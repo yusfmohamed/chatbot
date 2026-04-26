@@ -1,6 +1,6 @@
 # ══════════════════════════════════════════════════════════════════
 #  chatbot_testing.py  –  Selenium UI Tests for ChatBot Website
-#  Tests: Sign Up, Sign In, Validation, Logout, Contact Form
+#  Tests: Sign Up, Sign In, Validation, Logout, Contact Form, Chat
 # ══════════════════════════════════════════════════════════════════
 
 from selenium import webdriver
@@ -11,6 +11,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.keys import Keys
 from webdriver_manager.chrome import ChromeDriverManager
 import time
+import json
 
 # ── CONFIG ────────────────────────────────────────────────────────
 SITE_URL = "http://127.0.0.1:5500/index.html"   # Change if your port is different
@@ -42,18 +43,14 @@ def make_driver():
 
 # ── Helper: open Sign Up modal ────────────────────────────────────
 def open_signup_modal(driver, wait):
-    """Clicks the navbar Sign Up button and waits for the modal to appear."""
     btn = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, ".sign-up-btn")))
     btn.click()
-    # Wait for the injected overlay to become visible
     wait.until(EC.visibility_of_element_located((By.ID, "authOverlay")))
-    # Make sure we're on the Sign Up tab
     wait.until(EC.element_to_be_clickable((By.ID, "tabSignUp"))).click()
     wait.until(EC.visibility_of_element_located((By.ID, "panelSignUp")))
 
 # ── Helper: open Sign In modal ────────────────────────────────────
 def open_signin_modal(driver, wait):
-    """Clicks the navbar Sign In button and waits for the modal to appear."""
     btn = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, ".sign-in-btn")))
     btn.click()
     wait.until(EC.visibility_of_element_located((By.ID, "authOverlay")))
@@ -70,33 +67,24 @@ def fill_signup_form(driver, wait,
                      confirm="SecurePass1!"):
     driver.find_element(By.ID, "suFirstName").clear()
     driver.find_element(By.ID, "suFirstName").send_keys(first)
-
     driver.find_element(By.ID, "suLastName").clear()
     driver.find_element(By.ID, "suLastName").send_keys(last)
-
     Select(driver.find_element(By.ID, "suGender")).select_by_value(gender)
-
     driver.find_element(By.ID, "suNationality").clear()
     driver.find_element(By.ID, "suNationality").send_keys(nationality)
-
     Select(driver.find_element(By.ID, "suStudy")).select_by_value(study)
-
     driver.find_element(By.ID, "suUsername").clear()
     driver.find_element(By.ID, "suUsername").send_keys(username)
-
     driver.find_element(By.ID, "suGmail").clear()
     driver.find_element(By.ID, "suGmail").send_keys(gmail)
-
     driver.find_element(By.ID, "suPassword").clear()
     driver.find_element(By.ID, "suPassword").send_keys(password)
-
     driver.find_element(By.ID, "suConfirm").clear()
     driver.find_element(By.ID, "suConfirm").send_keys(confirm)
 
-# ── Helper: click the Create Account button ───────────────────────
+# ── Helper: click Create Account ─────────────────────────────────
 def click_create_account(driver):
-    btns = driver.find_elements(By.CSS_SELECTOR, "#panelSignUp .auth-submit-btn")
-    btns[0].click()
+    driver.find_elements(By.CSS_SELECTOR, "#panelSignUp .auth-submit-btn")[0].click()
 
 # ── Helper: close modal if open ───────────────────────────────────
 def close_modal_if_open(driver):
@@ -108,9 +96,17 @@ def close_modal_if_open(driver):
     except:
         pass
 
-# ── Helper: clear localStorage & sessionStorage ───────────────────
+# ── Helper: clear sessionStorage only (localStorage removed) ──────
 def clear_storage(driver):
-    driver.execute_script("localStorage.clear(); sessionStorage.clear();")
+    driver.execute_script("sessionStorage.clear();")
+
+# ── Helper: full signup flow ──────────────────────────────────────
+def signup_fresh_user(driver, wait, username="youssef_test01",
+                      gmail="youssef.test01@gmail.com"):
+    open_signup_modal(driver, wait)
+    fill_signup_form(driver, wait, username=username, gmail=gmail)
+    click_create_account(driver)
+    time.sleep(2.5)   # auth.js delays modal close by 1.2s then animates out
 
 # ══════════════════════════════════════════════════════════════════
 #  TEST 1 — Page loads correctly
@@ -151,6 +147,7 @@ def test_page_loads(driver, wait):
 def test_signup_modal_opens(driver, wait):
     print("\n📋 TEST 2: Sign Up modal opens")
     driver.get(SITE_URL)
+    clear_storage(driver)
     time.sleep(1)
 
     try:
@@ -191,27 +188,23 @@ def test_successful_signup(driver, wait):
                          username="youssef_test01",
                          gmail="youssef.test01@gmail.com")
         click_create_account(driver)
+        time.sleep(2.5)
 
-        # Wait for success message or modal to close
-        time.sleep(2)
-
-        # Check: toast message OR navbar updated OR modal closed
         toast_visible = False
-        navbar_updated = False
-        modal_closed = False
-
         try:
             toast = driver.find_element(By.ID, "authToast")
             toast_visible = "show" in toast.get_attribute("class") and toast.is_displayed()
         except:
             pass
 
+        navbar_updated = False
         try:
             navbar_text = driver.find_element(By.CSS_SELECTOR, ".nav-container").text
             navbar_updated = "youssef_test01" in navbar_text or "Hello" in navbar_text
         except:
             pass
 
+        modal_closed = False
         try:
             overlay = driver.find_element(By.ID, "authOverlay")
             modal_closed = not overlay.is_displayed()
@@ -219,26 +212,30 @@ def test_successful_signup(driver, wait):
             modal_closed = True
 
         log(toast_visible or navbar_updated or modal_closed,
-            "Sign Up succeeds (toast shown / navbar updated / modal closed)")
+            "Sign Up succeeds (toast / navbar updated / modal closed)")
 
-        # Check user saved in localStorage
-        users_raw = driver.execute_script("return localStorage.getItem('chatbot_users');")
-        import json
+        # ✅ Check sessionStorage — NOT localStorage (localStorage was removed)
+        users_raw = driver.execute_script("return sessionStorage.getItem('chatbot_users');")
         if users_raw:
             users = json.loads(users_raw)
             found = any(u.get("username") == "youssef_test01" for u in users)
-            log(found, "User saved in localStorage")
+            log(found, "User saved in sessionStorage user list")
         else:
-            log(False, "User saved in localStorage", "localStorage empty")
+            log(False, "User saved in sessionStorage user list", "chatbot_users key not found")
 
-        # Check session set
         session_raw = driver.execute_script("return sessionStorage.getItem('chatbot_session');")
         log(session_raw is not None, "Session stored in sessionStorage after signup")
 
+        try:
+            navbar_text = driver.find_element(By.CSS_SELECTOR, ".nav-container").text
+            log("youssef_test01" in navbar_text,
+                "Navbar shows Hello @youssef_test01 after signup",
+                f"navbar='{navbar_text.strip()}'")
+        except Exception as e:
+            log(False, "Navbar shows Hello @username", str(e))
+
     except Exception as e:
         log(False, "Successful Sign Up flow", str(e))
-
-    time.sleep(1.5)  # let modal close animation finish
 
 # ══════════════════════════════════════════════════════════════════
 #  TEST 4 — Duplicate username rejected
@@ -250,7 +247,6 @@ def test_duplicate_username(driver, wait):
 
     try:
         open_signup_modal(driver, wait)
-        # Same username as TEST 3
         fill_signup_form(driver, wait,
                          username="youssef_test01",
                          gmail="different.email@gmail.com")
@@ -277,7 +273,7 @@ def test_invalid_gmail(driver, wait):
         open_signup_modal(driver, wait)
         fill_signup_form(driver, wait,
                          username="newuser_xyz99",
-                         gmail="notvalid@yahoo.com")   # not @gmail.com
+                         gmail="notvalid@yahoo.com")
         click_create_account(driver)
         time.sleep(1)
 
@@ -325,7 +321,6 @@ def test_empty_form(driver, wait):
 
     try:
         open_signup_modal(driver, wait)
-        # Don't fill anything — just click submit
         click_create_account(driver)
         time.sleep(1)
 
@@ -337,7 +332,7 @@ def test_empty_form(driver, wait):
     close_modal_if_open(driver)
 
 # ══════════════════════════════════════════════════════════════════
-#  TEST 8 — Short password rejected (< 8 chars)
+#  TEST 8 — Short password rejected
 # ══════════════════════════════════════════════════════════════════
 def test_short_password(driver, wait):
     print("\n📋 TEST 8: Short password (< 8 chars) is rejected")
@@ -368,19 +363,16 @@ def test_short_password(driver, wait):
 def test_signin_modal_opens(driver, wait):
     print("\n📋 TEST 9: Sign In modal opens")
     driver.get(SITE_URL)
+    clear_storage(driver)
     time.sleep(1)
 
     try:
         open_signin_modal(driver, wait)
         log(True, "Auth modal appears after clicking Sign In")
-
-        panel = driver.find_element(By.ID, "panelSignIn")
-        log(panel.is_displayed(), "Sign In panel is visible")
-
-        username_field = driver.find_element(By.ID, "siUsername")
-        password_field = driver.find_element(By.ID, "siPassword")
-        log(username_field.is_displayed() and password_field.is_displayed(),
-            "Username and Password fields are visible")
+        log(driver.find_element(By.ID, "panelSignIn").is_displayed(), "Sign In panel is visible")
+        u = driver.find_element(By.ID, "siUsername")
+        p = driver.find_element(By.ID, "siPassword")
+        log(u.is_displayed() and p.is_displayed(), "Username and Password fields are visible")
     except Exception as e:
         log(False, "Sign In modal opens", str(e))
 
@@ -396,22 +388,14 @@ def test_successful_signin(driver, wait):
 
     try:
         open_signin_modal(driver, wait)
-
         driver.find_element(By.ID, "siUsername").send_keys("youssef_test01")
         driver.find_element(By.ID, "siPassword").send_keys("SecurePass1!")
-
-        # Click Sign In button
-        signin_btn = driver.find_element(By.CSS_SELECTOR, "#panelSignIn .auth-submit-btn")
-        signin_btn.click()
+        driver.find_element(By.CSS_SELECTOR, "#panelSignIn .auth-submit-btn").click()
         time.sleep(2)
 
-        # Check modal closed
         overlay = driver.find_element(By.ID, "authOverlay")
-        modal_closed = not overlay.is_displayed()
-        log(modal_closed, "Modal closes after successful sign in")
+        log(not overlay.is_displayed(), "Modal closes after successful sign in")
 
-        # Check session set
-        import json
         session_raw = driver.execute_script("return sessionStorage.getItem('chatbot_session');")
         if session_raw:
             session = json.loads(session_raw)
@@ -420,10 +404,9 @@ def test_successful_signin(driver, wait):
         else:
             log(False, "Session stored after sign in")
 
-        # Check navbar updated
         navbar_text = driver.find_element(By.CSS_SELECTOR, ".nav-container").text
         log("youssef_test01" in navbar_text or "Hello" in navbar_text,
-            "Navbar updated with username after sign in")
+            "Navbar shows Hello @username after sign in")
 
     except Exception as e:
         log(False, "Successful Sign In", str(e))
@@ -434,24 +417,19 @@ def test_successful_signin(driver, wait):
 def test_wrong_password(driver, wait):
     print("\n📋 TEST 11: Wrong password is rejected")
     driver.get(SITE_URL)
+    clear_storage(driver)
+    driver.refresh()
     time.sleep(1)
 
     try:
-        # Log out first if session active
-        driver.execute_script("sessionStorage.clear();")
-        driver.refresh()
-        time.sleep(1)
-
         open_signin_modal(driver, wait)
         driver.find_element(By.ID, "siUsername").send_keys("youssef_test01")
         driver.find_element(By.ID, "siPassword").send_keys("WrongPassword99!")
-
-        signin_btn = driver.find_element(By.CSS_SELECTOR, "#panelSignIn .auth-submit-btn")
-        signin_btn.click()
+        driver.find_element(By.CSS_SELECTOR, "#panelSignIn .auth-submit-btn").click()
         time.sleep(1)
 
         msg = driver.find_element(By.ID, "signinMsg")
-        log("incorrect" in msg.text.lower() or "password" in msg.text.lower() or "wrong" in msg.text.lower(),
+        log("incorrect" in msg.text.lower() or "password" in msg.text.lower(),
             "Error shown for wrong password", f"msg='{msg.text}'")
     except Exception as e:
         log(False, "Wrong password rejected", str(e))
@@ -464,19 +442,15 @@ def test_wrong_password(driver, wait):
 def test_nonexistent_user(driver, wait):
     print("\n📋 TEST 12: Non-existent username is rejected")
     driver.get(SITE_URL)
+    clear_storage(driver)
+    driver.refresh()
     time.sleep(1)
 
     try:
-        driver.execute_script("sessionStorage.clear();")
-        driver.refresh()
-        time.sleep(1)
-
         open_signin_modal(driver, wait)
         driver.find_element(By.ID, "siUsername").send_keys("ghost_user_99999")
         driver.find_element(By.ID, "siPassword").send_keys("SomePass123!")
-
-        signin_btn = driver.find_element(By.CSS_SELECTOR, "#panelSignIn .auth-submit-btn")
-        signin_btn.click()
+        driver.find_element(By.CSS_SELECTOR, "#panelSignIn .auth-submit-btn").click()
         time.sleep(1)
 
         msg = driver.find_element(By.ID, "signinMsg")
@@ -496,25 +470,21 @@ def test_logout(driver, wait):
     time.sleep(1)
 
     try:
-        # Sign in first
         open_signin_modal(driver, wait)
         driver.find_element(By.ID, "siUsername").send_keys("youssef_test01")
         driver.find_element(By.ID, "siPassword").send_keys("SecurePass1!")
         driver.find_element(By.CSS_SELECTOR, "#panelSignIn .auth-submit-btn").click()
         time.sleep(2)
 
-        # Click Log Out button
         logout_btn = wait.until(EC.element_to_be_clickable(
             (By.XPATH, "//button[contains(text(),'Log Out')]")
         ))
         logout_btn.click()
         time.sleep(2)
 
-        # Check session cleared
         session = driver.execute_script("return sessionStorage.getItem('chatbot_session');")
         log(session is None, "Session cleared after logout")
 
-        # Check Sign In / Sign Up buttons are back
         signin_visible = driver.find_element(By.CSS_SELECTOR, ".sign-in-btn").is_displayed()
         log(signin_visible, "Sign In button visible again after logout")
 
@@ -522,57 +492,50 @@ def test_logout(driver, wait):
         log(False, "Logout works", str(e))
 
 # ══════════════════════════════════════════════════════════════════
-#  TEST 14 — Modal closes with ESC key
+#  TEST 14 — ESC key closes modal
 # ══════════════════════════════════════════════════════════════════
 def test_esc_closes_modal(driver, wait):
     print("\n📋 TEST 14: ESC key closes modal")
     driver.get(SITE_URL)
-    driver.execute_script("sessionStorage.clear();")
+    clear_storage(driver)
     time.sleep(1)
 
     try:
         open_signup_modal(driver, wait)
         time.sleep(0.5)
-
         driver.find_element(By.TAG_NAME, "body").send_keys(Keys.ESCAPE)
         time.sleep(1)
-
         overlay = driver.find_element(By.ID, "authOverlay")
         log(not overlay.is_displayed(), "Modal closes on ESC key press")
     except Exception as e:
         log(False, "ESC key closes modal", str(e))
 
 # ══════════════════════════════════════════════════════════════════
-#  TEST 15 — Tab switch between Sign In and Sign Up
+#  TEST 15 — Tab switching
 # ══════════════════════════════════════════════════════════════════
 def test_tab_switching(driver, wait):
     print("\n📋 TEST 15: Tab switching between Sign In and Sign Up")
     driver.get(SITE_URL)
-    driver.execute_script("sessionStorage.clear();")
+    clear_storage(driver)
     time.sleep(1)
 
     try:
         open_signin_modal(driver, wait)
-
-        # Switch to Sign Up tab
         driver.find_element(By.ID, "tabSignUp").click()
         time.sleep(0.5)
-        signup_panel = driver.find_element(By.ID, "panelSignUp")
-        log(signup_panel.is_displayed(), "Clicking Sign Up tab shows Sign Up panel")
-
-        # Switch back to Sign In tab
+        log(driver.find_element(By.ID, "panelSignUp").is_displayed(),
+            "Clicking Sign Up tab shows Sign Up panel")
         driver.find_element(By.ID, "tabSignIn").click()
         time.sleep(0.5)
-        signin_panel = driver.find_element(By.ID, "panelSignIn")
-        log(signin_panel.is_displayed(), "Clicking Sign In tab shows Sign In panel")
-
+        log(driver.find_element(By.ID, "panelSignIn").is_displayed(),
+            "Clicking Sign In tab shows Sign In panel")
     except Exception as e:
         log(False, "Tab switching", str(e))
 
     close_modal_if_open(driver)
 
 # ══════════════════════════════════════════════════════════════════
-#  TEST 16 — Contact form present
+#  TEST 16 — Contact form present and fillable
 # ══════════════════════════════════════════════════════════════════
 def test_contact_form(driver, wait):
     print("\n📋 TEST 16: Contact form fields are present and fillable")
@@ -580,25 +543,204 @@ def test_contact_form(driver, wait):
     time.sleep(1)
 
     try:
-        # Scroll down to contact form
         driver.execute_script("document.getElementById('aboutSection').scrollIntoView();")
         time.sleep(1)
-
         name_field  = wait.until(EC.presence_of_element_located((By.ID, "contactName")))
         email_field = driver.find_element(By.ID, "contactEmail")
         msg_field   = driver.find_element(By.ID, "contactMessage")
-
         name_field.send_keys("Test User")
         email_field.send_keys("test@gmail.com")
         msg_field.send_keys("This is a test message from Selenium.")
-
         log(True, "Contact form is present and fillable")
-
         submit_btn = driver.find_element(By.CSS_SELECTOR, ".form-submit-btn")
         log(submit_btn.is_displayed(), "Contact form submit button is visible")
-
     except Exception as e:
         log(False, "Contact form present and fillable", str(e))
+
+# ══════════════════════════════════════════════════════════════════
+#  TEST 17 — Get Started blocked without login
+# ══════════════════════════════════════════════════════════════════
+def test_get_started_blocked_without_login(driver, wait):
+    print("\n📋 TEST 17: Get Started is blocked when not logged in")
+    driver.get(SITE_URL)
+    clear_storage(driver)
+    driver.refresh()
+    time.sleep(1)
+
+    try:
+        btn = wait.until(EC.element_to_be_clickable((By.ID, "getStartedBtn")))
+        btn.click()
+        time.sleep(1.5)
+
+        still_on_index = "chat.html" not in driver.current_url
+        log(still_on_index, "User stays on index page when not logged in",
+            f"url='{driver.current_url}'")
+
+        try:
+            error_toast = driver.find_element(By.ID, "getStartedError")
+            toast_shown = "show" in error_toast.get_attribute("class")
+            log(toast_shown, "Error toast shown telling user to sign up first")
+        except:
+            log(False, "Error toast shown telling user to sign up first")
+
+    except Exception as e:
+        log(False, "Get Started blocked without login", str(e))
+
+# ══════════════════════════════════════════════════════════════════
+#  TEST 18 — Sign Up → Get Started → lands on chat page
+# ══════════════════════════════════════════════════════════════════
+def test_signup_then_get_started(driver, wait):
+    print("\n📋 TEST 18: Sign Up → Get Started → Chat page loads")
+    driver.get(SITE_URL)
+    clear_storage(driver)
+    time.sleep(1)
+
+    try:
+        # Step 1: Sign up a fresh user
+        signup_fresh_user(driver, wait,
+                          username="youssef_test01",
+                          gmail="youssef.test01@gmail.com")
+
+        # Step 2: Click Get Started (now logged in)
+        get_started = wait.until(EC.element_to_be_clickable((By.ID, "getStartedBtn")))
+        get_started.click()
+
+        # Step 3: main.js shows loading overlay for 1.5s then redirects
+        time.sleep(3.5)
+
+        # Step 4: Verify on chat page
+        on_chat = "chat.html" in driver.current_url
+        log(on_chat, "Redirected to chat.html after Get Started",
+            f"url='{driver.current_url}'")
+
+        # Step 5: Verify username passed in URL
+        username_in_url = "youssef_test01" in driver.current_url
+        log(username_in_url, "Username passed correctly in URL to chat page",
+            f"url='{driver.current_url}'")
+
+    except Exception as e:
+        log(False, "Sign Up then Get Started redirects to chat", str(e))
+
+# ══════════════════════════════════════════════════════════════════
+#  TEST 19 — Chat page UI loads correctly
+# ══════════════════════════════════════════════════════════════════
+def test_chat_page_loads(driver, wait):
+    print("\n📋 TEST 19: Chat page UI loads correctly")
+    driver.get("http://127.0.0.1:5500/chat.html?username=youssef_test01")
+    time.sleep(2)
+
+    try:
+        wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, ".navbar")))
+        log(True, "Chat page navbar is present")
+    except:
+        log(False, "Chat page navbar is present")
+
+    try:
+        username_el = driver.find_element(By.ID, "username")
+        displayed = username_el.text.strip()
+        log(displayed == "youssef_test01",
+            "Username displayed correctly in chat navbar", f"shown='{displayed}'")
+    except Exception as e:
+        log(False, "Username displayed in chat navbar", str(e))
+
+    try:
+        wait.until(EC.presence_of_element_located((By.ID, "chatMessages")))
+        log(True, "Chat messages container is present")
+    except:
+        log(False, "Chat messages container is present")
+
+    try:
+        msg_input = driver.find_element(By.ID, "messageInput")
+        send_btn  = driver.find_element(By.ID, "sendButton")
+        log(msg_input.is_displayed() and send_btn.is_displayed(),
+            "Message input and Send button are visible")
+    except Exception as e:
+        log(False, "Message input and Send button visible", str(e))
+
+    try:
+        time.sleep(2)   # api.js adds greeting on DOMContentLoaded
+        messages = driver.find_elements(By.CSS_SELECTOR, ".bot-message")
+        log(len(messages) > 0, "Bot greeting message appears on load",
+            f"bot messages found: {len(messages)}")
+    except Exception as e:
+        log(False, "Bot greeting message appears on load", str(e))
+
+# ══════════════════════════════════════════════════════════════════
+#  TEST 20 — User can type and send a message in chat
+# ══════════════════════════════════════════════════════════════════
+def test_chat_send_message(driver, wait):
+    print("\n📋 TEST 20: User can type and send a message in chat")
+    driver.get("http://127.0.0.1:5500/chat.html?username=youssef_test01")
+    time.sleep(2)
+
+    try:
+        msg_input = wait.until(EC.presence_of_element_located((By.ID, "messageInput")))
+        msg_input.send_keys("Hello, this is a test message!")
+
+        log(msg_input.get_attribute("value") == "Hello, this is a test message!",
+            "Text typed correctly into message input")
+
+        driver.find_element(By.ID, "sendButton").click()
+        time.sleep(1)
+
+        log(msg_input.get_attribute("value") == "",
+            "Input field cleared after sending message")
+
+        user_messages = driver.find_elements(By.CSS_SELECTOR, ".user-message")
+        log(len(user_messages) > 0, "User message appears in chat window",
+            f"user messages found: {len(user_messages)}")
+
+        try:
+            typing = driver.find_element(By.ID, "typingIndicator")
+            log(True, "Typing indicator element exists in DOM")
+        except:
+            log(False, "Typing indicator element exists in DOM")
+
+    except Exception as e:
+        log(False, "User can type and send a message", str(e))
+
+# ══════════════════════════════════════════════════════════════════
+#  TEST 21 — Chat logout returns to index
+# ══════════════════════════════════════════════════════════════════
+def test_chat_logout(driver, wait):
+    print("\n📋 TEST 21: Chat page logout returns to index page")
+    driver.get("http://127.0.0.1:5500/chat.html?username=youssef_test01")
+    time.sleep(2)
+
+    try:
+        logout_btn = wait.until(EC.element_to_be_clickable((By.ID, "logoutBtn")))
+        logout_btn.click()
+        time.sleep(2)
+
+        on_index = "index.html" in driver.current_url or driver.current_url.endswith("5500/")
+        log(on_index, "Logout from chat returns to index.html",
+            f"url='{driver.current_url}'")
+    except Exception as e:
+        log(False, "Chat logout returns to index", str(e))
+
+# ══════════════════════════════════════════════════════════════════
+#  TEST 22 — Enter key sends message in chat
+# ══════════════════════════════════════════════════════════════════
+def test_chat_enter_key(driver, wait):
+    print("\n📋 TEST 22: Enter key sends message in chat")
+    driver.get("http://127.0.0.1:5500/chat.html?username=youssef_test01")
+    time.sleep(2)
+
+    try:
+        msg_input = wait.until(EC.presence_of_element_located((By.ID, "messageInput")))
+        msg_input.send_keys("Testing enter key send")
+        msg_input.send_keys(Keys.RETURN)
+        time.sleep(1)
+
+        log(msg_input.get_attribute("value") == "",
+            "Enter key sends the message (input cleared after send)")
+
+        user_messages = driver.find_elements(By.CSS_SELECTOR, ".user-message")
+        log(len(user_messages) > 0, "Message appears in chat after Enter key",
+            f"user messages: {len(user_messages)}")
+
+    except Exception as e:
+        log(False, "Enter key sends message", str(e))
 
 # ══════════════════════════════════════════════════════════════════
 #  MAIN — Run all tests
@@ -613,6 +755,7 @@ if __name__ == "__main__":
     wait   = WebDriverWait(driver, WAIT_SEC)
 
     try:
+        # ── Index page & auth tests ───────────────────────────
         test_page_loads(driver, wait)
         test_signup_modal_opens(driver, wait)
         test_successful_signup(driver, wait)
@@ -630,8 +773,16 @@ if __name__ == "__main__":
         test_tab_switching(driver, wait)
         test_contact_form(driver, wait)
 
+        # ── Get Started + Chat page tests ─────────────────────
+        test_get_started_blocked_without_login(driver, wait)
+        test_signup_then_get_started(driver, wait)
+        test_chat_page_loads(driver, wait)
+        test_chat_send_message(driver, wait)
+        test_chat_logout(driver, wait)
+        test_chat_enter_key(driver, wait)
+
     finally:
         driver.quit()
         print("\n" + "=" * 60)
-        print(f"  Results: {passed} passed,  {failed} failed  (total {passed+failed})")
+        print(f"  Results: {passed} passed,  {failed} failed  (total {passed + failed})")
         print("=" * 60)

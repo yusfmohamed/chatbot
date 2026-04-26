@@ -1,17 +1,17 @@
 // ══════════════════════════════════════════════════════
-//  auth.js  –  Sign Up / Sign In  (LocalStorage-based)
+//  auth.js  –  Sign Up / Sign In  (SessionStorage-based)
 //  Fields: firstName, lastName, gender, nationality,
 //          fieldOfStudy, gmail, username, password
 // ══════════════════════════════════════════════════════
 
-// ── Storage helpers ──────────────────────────────────
+// ── Storage helpers (sessionStorage only — no localStorage) ──────
 const DB_KEY = 'chatbot_users';
 
 function getUsers() {
-    return JSON.parse(localStorage.getItem(DB_KEY) || '[]');
+    return JSON.parse(sessionStorage.getItem(DB_KEY) || '[]');
 }
 function saveUsers(users) {
-    localStorage.setItem(DB_KEY, JSON.stringify(users));
+    sessionStorage.setItem(DB_KEY, JSON.stringify(users));
 }
 function findUser(username) {
     return getUsers().find(u => u.username.toLowerCase() === username.toLowerCase());
@@ -64,7 +64,6 @@ function injectAuthModal() {
         <div class="auth-panel active" id="panelSignIn">
           <div class="auth-msg" id="signinMsg"></div>
 
-          <!-- Username -->
           <div class="auth-field">
             <label>Username</label>
             <div style="position:relative">
@@ -73,7 +72,6 @@ function injectAuthModal() {
             </div>
           </div>
 
-          <!-- Password -->
           <div class="auth-field">
             <label>Password</label>
             <div style="position:relative">
@@ -239,7 +237,7 @@ function switchTab(tab) {
 }
 
 function clearMsgs() {
-    ['signinMsg','signupMsg'].forEach(id => {
+    ['signinMsg', 'signupMsg'].forEach(id => {
         const el = document.getElementById(id);
         if (el) { el.className = 'auth-msg'; el.textContent = ''; }
     });
@@ -272,7 +270,7 @@ function checkStrength(val) {
     if (/[A-Z]/.test(val) && /[a-z]/.test(val)) score++;
     if (/[0-9]/.test(val) && /[^A-Za-z0-9]/.test(val)) score++;
 
-    const levels = ['weak','medium','strong'];
+    const levels = ['weak', 'medium', 'strong'];
     const labels = ['Weak — add numbers & symbols', 'Medium — add special characters', 'Strong password ✓'];
     for (let i = 0; i < score; i++) segs[i].classList.add(levels[score - 1]);
     label.textContent = labels[score - 1] || 'Too short';
@@ -292,6 +290,57 @@ function closeAuthModal() {
     setTimeout(() => { overlay.style.display = 'none'; }, 350);
 }
 
+// ── Navbar: show "Hello @username" ────────────────────
+function updateNavbarLoggedIn(user) {
+    const authBtns = document.querySelector('.auth-buttons');
+    if (!authBtns) return;
+
+    authBtns.innerHTML = `
+        <span class="navbar-greeting">
+            Hello,&nbsp;<strong class="navbar-username">${user.username}</strong>
+        </span>
+        <button class="sign-up-btn logout-btn" onclick="handleLogout()">
+            Log Out
+        </button>
+    `;
+
+    // Inject greeting styles once
+    if (!document.getElementById('navbarGreetingStyle')) {
+        const style = document.createElement('style');
+        style.id = 'navbarGreetingStyle';
+        style.textContent = `
+            .navbar-greeting {
+                display: flex;
+                align-items: center;
+                gap: 0.3rem;
+                color: rgba(255, 255, 255, 0.85);
+                font-size: 0.95rem;
+                font-weight: 500;
+                letter-spacing: 0.01em;
+                animation: greetingFadeIn 0.5s ease forwards;
+            }
+            .navbar-username {
+                color: #a78bfa;
+                font-weight: 700;
+                font-size: 1rem;
+            }
+            .logout-btn {
+                background: rgba(239, 68, 68, 0.15) !important;
+                border: 1px solid rgba(239, 68, 68, 0.3) !important;
+                color: #fca5a5 !important;
+            }
+            .logout-btn:hover {
+                background: rgba(239, 68, 68, 0.28) !important;
+            }
+            @keyframes greetingFadeIn {
+                from { opacity: 0; transform: translateX(10px); }
+                to   { opacity: 1; transform: translateX(0); }
+            }
+        `;
+        document.head.appendChild(style);
+    }
+}
+
 // ── SIGN IN handler ───────────────────────────────────
 function handleSignIn() {
     clearMsgs();
@@ -306,23 +355,22 @@ function handleSignIn() {
     if (!user) {
         showMsg('signinMsg', 'Username not found. Please sign up first.', 'error'); return;
     }
-    if (user.password !== btoa(password)) {      // simple btoa encoding
+    if (user.password !== btoa(password)) {
         showMsg('signinMsg', 'Incorrect password. Please try again.', 'error'); return;
     }
 
-    // Success — store session
-    sessionStorage.setItem('chatbot_session', JSON.stringify({
+    // Store session
+    const sessionData = {
         username: user.username,
         firstName: user.firstName,
         lastName: user.lastName,
         gmail: user.gmail,
         fieldOfStudy: user.fieldOfStudy
-    }));
+    };
+    sessionStorage.setItem('chatbot_session', JSON.stringify(sessionData));
 
     closeAuthModal();
     showToast(`Welcome back, ${user.firstName}! 👋`, 'success');
-
-    // Update navbar to show user info
     updateNavbarLoggedIn(user);
 }
 
@@ -330,15 +378,15 @@ function handleSignIn() {
 function handleSignUp() {
     clearMsgs();
 
-    const firstName  = document.getElementById('suFirstName').value.trim();
-    const lastName   = document.getElementById('suLastName').value.trim();
-    const gender     = document.getElementById('suGender').value;
-    const nationality= document.getElementById('suNationality').value.trim();
-    const study      = document.getElementById('suStudy').value;
-    const username   = document.getElementById('suUsername').value.trim();
-    const gmail      = document.getElementById('suGmail').value.trim();
-    const password   = document.getElementById('suPassword').value;
-    const confirm    = document.getElementById('suConfirm').value;
+    const firstName   = document.getElementById('suFirstName').value.trim();
+    const lastName    = document.getElementById('suLastName').value.trim();
+    const gender      = document.getElementById('suGender').value;
+    const nationality = document.getElementById('suNationality').value.trim();
+    const study       = document.getElementById('suStudy').value;
+    const username    = document.getElementById('suUsername').value.trim();
+    const gmail       = document.getElementById('suGmail').value.trim();
+    const password    = document.getElementById('suPassword').value;
+    const confirm     = document.getElementById('suConfirm').value;
 
     // Validation
     if (!firstName || !lastName || !gender || !nationality || !study || !username || !gmail || !password || !confirm) {
@@ -360,42 +408,28 @@ function handleSignUp() {
         showMsg('signupMsg', 'This Gmail is already registered.', 'error'); return;
     }
 
-    // Save user
+    // Save new user into sessionStorage user list
     const users = getUsers();
-    users.push({
+    const newUser = {
         firstName, lastName, gender, nationality,
         fieldOfStudy: study, username, gmail,
-        password: btoa(password),           // base64 encoded (not secure, OK for uni project)
+        password: btoa(password),
         createdAt: new Date().toISOString()
-    });
+    };
+    users.push(newUser);
     saveUsers(users);
 
-    // Auto-login: store session immediately after sign up
-    const newUser = { username, firstName, lastName, gmail, fieldOfStudy: study };
-    sessionStorage.setItem('chatbot_session', JSON.stringify(newUser));
+    // Store session
+    const sessionData = { username, firstName, lastName, gmail, fieldOfStudy: study };
+    sessionStorage.setItem('chatbot_session', JSON.stringify(sessionData));
 
     showMsg('signupMsg', '✓ Account created! Logging you in...', 'success');
     showToast(`Welcome, @${username}! You're all set 🎉`, 'success');
 
-    // Close modal and update navbar after short delay
     setTimeout(() => {
         closeAuthModal();
         updateNavbarLoggedIn(newUser);
     }, 1200);
-}
-
-// ── Navbar update after login ─────────────────────────
-function updateNavbarLoggedIn(user) {
-    const authBtns = document.querySelector('.auth-buttons');
-    if (!authBtns) return;
-    authBtns.innerHTML = `
-      <span style="color:rgba(255,255,255,0.85);font-size:0.92rem;font-weight:500;display:flex;align-items:center;gap:0.4rem;">
-        Hello,&nbsp;<strong style="color:#a78bfa;font-weight:700">@` + '${user.username}' + `</strong>
-      </span>
-      <button class="sign-up-btn" onclick="handleLogout()" style="background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.3);color:#fca5a5;">
-        Log Out
-      </button>
-    `;
 }
 
 // ── Logout ────────────────────────────────────────────
@@ -404,16 +438,16 @@ function handleLogout() {
     location.reload();
 }
 
-// ── Check session on page load ────────────────────────
+// ── Restore session on page load ──────────────────────
 function checkSession() {
-    const session = sessionStorage.getItem('chatbot_session');
-    if (session) {
-        const user = JSON.parse(session);
+    const raw = sessionStorage.getItem('chatbot_session');
+    if (raw) {
+        const user = JSON.parse(raw);
         updateNavbarLoggedIn(user);
     }
 }
 
-// ── Wire up navbar buttons ────────────────────────────
+// ── Wire up navbar Sign In / Sign Up buttons ──────────
 function wireNavButtons() {
     const signInBtn = document.querySelector('.sign-in-btn');
     const signUpBtn = document.querySelector('.sign-up-btn');
@@ -425,20 +459,16 @@ function wireNavButtons() {
 document.addEventListener('DOMContentLoaded', () => {
     injectAuthModal();
 
-    // Close button
     document.getElementById('authCloseBtn').addEventListener('click', closeAuthModal);
 
-    // Click outside to close
-    document.getElementById('authOverlay').addEventListener('click', function(e) {
+    document.getElementById('authOverlay').addEventListener('click', function (e) {
         if (e.target === this) closeAuthModal();
     });
 
-    // Keyboard ESC
     document.addEventListener('keydown', e => {
         if (e.key === 'Escape') closeAuthModal();
     });
 
-    // Enter key for sign in
     document.addEventListener('keydown', e => {
         if (e.key === 'Enter') {
             if (document.getElementById('panelSignIn').classList.contains('active')) handleSignIn();
