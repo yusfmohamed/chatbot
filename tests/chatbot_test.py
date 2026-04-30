@@ -58,7 +58,7 @@ def open_signin_modal(driver, wait):
 
 # ── Helper: fill Sign Up form ─────────────────────────────────────
 def fill_signup_form(driver, wait,
-                     first="Youssef", last="Ali",
+                     first="Youssef", last="Mohamed",
                      gender="male", nationality="Egyptian",
                      study="software_engineering",
                      username="youssef_test01",
